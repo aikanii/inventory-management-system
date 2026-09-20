@@ -54,6 +54,50 @@ function isAuthEndpoint(path: string): boolean {
   return /^\/api(\/v1)?\/auth\/(login|refresh|logout)$/.test(path);
 }
 
+interface Rotation {
+  ok: boolean;
+}
+
+let rotation: Promise<Rotation> | null = null;
+let rotationFailure = '';
+
+/**
+ * Rotate the refresh token at most once per burst.
+ *
+ * The server treats a replayed refresh token as a leak and revokes the whole
+ * family, so N parallel requests that all see a 401 must produce exactly one
+ * rotation — not N. Views fetch in parallel (`Promise.all` in Stock and
+ * Profit & loss) and StrictMode runs every effect twice, so this is the normal
+ * case, not an edge case: without the shared promise, opening one view after
+ * the 15-minute access token lapses burned the family and signed the user out.
+ */
+function rotate(): Promise<Rotation> {
+  rotation ??= (async () => {
+    const token = refreshToken;
+    if (!token) return { ok: false };
+    const res = await fetch('/api/v1/auth/refresh', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ refresh_token: token }),
+    });
+    if (!res.ok) {
+      const failure = await res.json().catch(() => null);
+      rotationFailure = failure?.error?.message ?? '';
+      return { ok: false };
+    }
+    const body = await res.json();
+    accessToken = body.data.access_token;
+    refreshToken = body.data.refresh_token;
+    localStorage.setItem('ims.access', body.data.access_token);
+    localStorage.setItem('ims.refresh', body.data.refresh_token);
+    rotationFailure = '';
+    return { ok: true };
+  })().finally(() => {
+    rotation = null;
+  });
+  return rotation;
+}
+
 export function saveSession(data: any): void {
   accessToken = data.access_token;
   refreshToken = data.refresh_token;
@@ -85,6 +129,7 @@ export function currency(): string {
 }
 
 async function raw(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
+  const sentWith = accessToken;
   const headers = new Headers(init.headers);
   headers.set('content-type', 'application/json');
   if (accessToken) headers.set('authorization', `Bearer ${accessToken}`);
@@ -93,27 +138,18 @@ async function raw(path: string, init: RequestInit = {}, retry = true): Promise<
 
   if (res.status !== 401 || isAuthEndpoint(path)) return res;
 
-  // The access token is short-lived; a 401 is normally just "rotate and go".
-  if (retry && refreshToken) {
-    const refreshed = await fetch('/api/v1/auth/refresh', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-    if (refreshed.ok) {
-      const body = await refreshed.json();
-      accessToken = body.data.access_token;
-      refreshToken = body.data.refresh_token;
-      localStorage.setItem('ims.access', body.data.access_token);
-      localStorage.setItem('ims.refresh', body.data.refresh_token);
-      return raw(path, init, false);
-    }
-    const failure = await refreshed.json().catch(() => null);
-    expireSession(failure?.error?.message ?? 'Your session has expired. Please sign in again.');
+  if (!retry) {
+    // Rotated once already and still rejected: this session is unusable.
+    expireSession(rotationFailure || 'Your session has expired. Please sign in again.');
     return res;
   }
 
-  expireSession('Your session has expired. Please sign in again.');
+  // If a sibling request already rotated while this one was in flight, replay
+  // with the new token instead of rotating a second time.
+  const rotated = accessToken !== sentWith ? { ok: true } : await rotate();
+  if (rotated.ok) return raw(path, init, false);
+
+  expireSession(rotationFailure || 'Your session has expired. Please sign in again.');
   return res;
 }
 

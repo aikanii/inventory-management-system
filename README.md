@@ -556,6 +556,15 @@ rotating it. When a refresh cannot recover the session, the client clears its st
 and returns to the sign-in screen with the server's reason rather than retrying without a
 token.
 
+Because a replayed refresh token revokes its whole family, the client performs **at most one
+rotation per burst**: parallel requests that all see a 401 share a single in-flight
+`POST /auth/refresh` and then replay against the new access token. This matters in practice —
+Stock fetches two endpoints at once, Profit & loss fetches three, and StrictMode runs every
+effect twice, so a view loaded just after the access token lapses would otherwise present the
+same refresh token several times and revoke the session it was trying to save. Two browser
+tabs do not share that in-flight promise, so signing in again in one tab still rotates the
+family the other tab is holding; the losing tab is returned to sign-in.
+
 ### 5.3 Endpoints
 
 #### Authentication and users: mounted at `/api/v1/auth`
