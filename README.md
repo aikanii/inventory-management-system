@@ -25,7 +25,7 @@ restock decisions the owner can act on the same day.
 > **The system is implemented and running.** This checkout contains a working
 > TypeScript monorepo: an Express REST API, a React single-page app, an embedded
 > PostgreSQL, a background job runner, the forecasting/reorder/anomaly layer and
-> the assistant. It ships as a single executable — `node bin/ims.js start` boots
+> the assistant. It ships as a single executable: `node bin/ims.js start` boots
 > the API and the web UI with no database server, no Redis and no Docker.
 >
 > ```bash
@@ -82,8 +82,8 @@ restock decisions the owner can act on the same day.
 
 ### The problem
 
-Small-scale stores — sari-sari stores, neighbourhood groceries, hardware and farm-supply
-outlets, campus canteens, mini-pharmacies — overwhelmingly run on paper notebooks, a
+Small-scale stores: sari-sari stores, neighbourhood groceries, hardware and farm-supply
+outlets, campus canteens, mini-pharmacies: overwhelmingly run on paper notebooks, a
 spreadsheet, or the owner's memory. That produces four concrete, measurable failures:
 
 | Failure mode | What it costs the store |
@@ -101,15 +101,15 @@ with no costing, no supplier ordering, and no profit reporting.
 
 Provide a **low-cost, low-friction, offline-tolerant** system that gives a small-store owner:
 
-1. **A complete stock ledger** — every unit in, out, returned, spoiled or counted, attributed
+1. **A complete stock ledger**: every unit in, out, returned, spoiled or counted, attributed
    to a user, a timestamp and a reason. Nothing is editable after the fact; corrections are
    made with reversing entries so the history stays auditable.
-2. **Accurate, point-in-time profitability** — each sold line records the cost basis of the
+2. **Accurate, point-in-time profitability**: each sold line records the cost basis of the
    units consumed, so gross margin is a fact rather than an estimate, and net profit is gross
    margin minus the period's recorded operating expenses.
-3. **Forward-looking replenishment** — demand forecasts and reorder-point suggestions generated
+3. **Forward-looking replenishment**: demand forecasts and reorder-point suggestions generated
    from the store's own sales history, surfaced as a single actionable list.
-4. **Answers in plain language** — an assistant the owner can ask ("which items lost money last
+4. **Answers in plain language**: an assistant the owner can ask ("which items lost money last
    week?", "what should I reorder before Friday?") without learning a reporting UI.
 
 ### Scope
@@ -159,7 +159,7 @@ flowchart TB
         SPA["React 19 SPA<br/>dashboard · POS · stock · reorder · P&amp;L · assistant"]
     end
 
-    subgraph Process["Node.js 20 process — `ims start`"]
+    subgraph Process["Node.js 20 process: `ims start`"]
         Static["Static bundle<br/>express.static + SPA fallback"]
         API["Express 5 REST API<br/>/api/v1"]
         AuthZ["AuthN / AuthZ<br/>RS256 JWT · RBAC · store scope"]
@@ -175,7 +175,7 @@ flowchart TB
         Assistant["Assistant<br/>read-only tool allow-list · redaction"]
     end
 
-    subgraph Data["Data layer — one `Database` interface"]
+    subgraph Data["Data layer: one `Database` interface"]
         PGlite[("PGlite<br/>embedded PostgreSQL")]
         PG[("PostgreSQL 16<br/>via DATABASE_URL")]
     end
@@ -212,11 +212,11 @@ cause are recorded rather than silently absorbed.
 | 2 | **Append-only `stock_movement` ledger** with a derived `stock_level` cache | Mutable quantity column | An editable quantity can never be reconciled after the fact. A ledger makes every balance recomputable, gives free audit history, and is the input the forecasters need. |
 | 3 | **Cost basis snapshotted onto `sale_item`** | Recompute margin from current product cost | Wholesale prices move. Recomputing rewrites history and makes last month's report differ from what was reported last month. |
 | 4 | **TypeScript end to end**, `strict` + `noUncheckedIndexedAccess` | Untyped JS | Runtime validation at the boundary and static types over the same shapes; a missing array element is a compile error, not a crash at 2 a.m. |
-| 5 | **A thin SQL data layer** with two drivers behind one `Database` interface — *revised from Prisma* | Prisma, TypeORM, Drizzle | Prisma downloads its query engine from `binaries.prisma.sh` at install time and fails on restricted networks. One interface means the same SQL runs on an embedded PostgreSQL in development and on PostgreSQL 16 in production, parameterised throughout. |
-| 6 | **A durable `job_queue` table** with an in-process poller — *revised from BullMQ on Redis* | BullMQ, `setInterval`, OS cron | Removes a required service from a single-machine install. Jobs are claimed with `UPDATE … RETURNING`, retried to a bounded attempt count, and survive a restart because they live in the database. The `Queue` interface is the swap point for BullMQ later. |
+| 5 | **A thin SQL data layer** with two drivers behind one `Database` interface: *revised from Prisma* | Prisma, TypeORM, Drizzle | Prisma downloads its query engine from `binaries.prisma.sh` at install time and fails on restricted networks. One interface means the same SQL runs on an embedded PostgreSQL in development and on PostgreSQL 16 in production, parameterised throughout. |
+| 6 | **A durable `job_queue` table** with an in-process poller: *revised from BullMQ on Redis* | BullMQ, `setInterval`, OS cron | Removes a required service from a single-machine install. Jobs are claimed with `UPDATE … RETURNING`, retried to a bounded attempt count, and survive a restart because they live in the database. The `Queue` interface is the swap point for BullMQ later. |
 | 7 | **REST + JSON envelopes** | GraphQL | POS clients issue a small, fixed set of calls; there is no resolver complexity to justify. |
 | 8 | **The assistant calls tools; it never touches SQL** | Direct database access from the model | Free-form SQL from a model is an unbounded read on data scoped by store and role. Tools are parameterised, allow-listed and permission-checked server-side. |
-| 9 | **PostgreSQL as the only system of record** — *revised to include an embedded build of it* | SQLite for local dev, Redis as a store | PGlite is a real PostgreSQL compiled to WASM, so the SQL, the constraints and the transaction semantics are identical in development and production. Redis is not used at all. |
+| 9 | **PostgreSQL as the only system of record**: *revised to include an embedded build of it* | SQLite for local dev, Redis as a store | PGlite is a real PostgreSQL compiled to WASM, so the SQL, the constraints and the transaction semantics are identical in development and production. Redis is not used at all. |
 | 10 | **One process serves API + UI + worker** | Separate web server | `ims start` on a shop counter's machine should be one command with one port and one thing to keep running. |
 
 ### 2.3 Repository layout
@@ -235,13 +235,13 @@ inventory-management-system/
 │   │   │   │   ├── database.ts    # Database interface + PGlite and pg drivers
 │   │   │   │   ├── migrate.ts     # forward-only SQL migrator
 │   │   │   │   └── migrations/0001_init.sql
-│   │   │   ├── domain/            # pure functions, no I/O — the unit-test surface
+│   │   │   ├── domain/            # pure functions, no I/O: the unit-test surface
 │   │   │   │   ├── costing.ts     # sale totals, moving average, margin, turnover
 │   │   │   │   ├── forecast.ts    # seasonal naive, Holt-Winters, backtest, Croston
 │   │   │   │   ├── reorder.ts     # reorder point, safety stock, order quantity
 │   │   │   │   └── anomaly.ts     # six screening rules
 │   │   │   ├── services/
-│   │   │   │   ├── stock.ts       # applyMovement — the only writer of on-hand stock
+│   │   │   │   ├── stock.ts       # applyMovement: the only writer of on-hand stock
 │   │   │   │   └── sales.ts       # createSale · returnSale · voidSale
 │   │   │   ├── modules/           # HTTP routers: auth catalog inventory sales
 │   │   │   │                      #   purchasing reporting ai
@@ -417,10 +417,10 @@ intent, which has not changed.
 
 | ID | Feature | Priority | Status | Notes |
 |---|---|---|---|---|
-| POS-01 | Barcode and search-based cart entry | P0 | 🟡 Partial | Keyboard-first, touch-friendly  — search + keyboard; no camera scanner |
+| POS-01 | Barcode and search-based cart entry | P0 | 🟡 Partial | Keyboard-first, touch-friendly : search + keyboard; no camera scanner |
 | POS-02 | Line and order discounts, with margin floor warning | P0 | ✅ Done | Blocks below-cost sales unless overridden |
-| POS-03 | Multiple tenders per sale (cash, e-wallet, card, credit) | P0 | 🟡 Partial | Credit creates a customer balance  — `CREDIT` does not post to a customer balance |
-| POS-04 | Receipt printing (thermal) and PDF | P0 | 🟡 Partial | 58 mm / 80 mm templates  — JSON + thermal text; no PDF |
+| POS-03 | Multiple tenders per sale (cash, e-wallet, card, credit) | P0 | 🟡 Partial | Credit creates a customer balance : `CREDIT` does not post to a customer balance |
+| POS-04 | Receipt printing (thermal) and PDF | P0 | 🟡 Partial | 58 mm / 80 mm templates : JSON + thermal text; no PDF |
 | POS-05 | Returns and voids with stock restoration | P0 | ✅ Done | Restores the original cost basis |
 | POS-06 | Shift open/close with cash reconciliation | P0 | ⬜ Not built | Expected vs counted, variance recorded |
 | POS-07 | Offline sale queue with conflict-safe sync | P0 | ⬜ Not built | Idempotency-keyed replay |
@@ -435,7 +435,7 @@ intent, which has not changed.
 | PUR-02 | Purchase order drafting from reorder suggestions | P0 | ✅ Done | One click from the AI list |
 | PUR-03 | Partial receiving and short-close | P0 | ✅ Done | Drives the PO state machine |
 | PUR-04 | Landed cost allocation (freight, duties) | P1 | ⬜ Not built | Allocates by value or weight |
-| PUR-05 | Supplier price history and price-change alerts | P1 | 🟡 Partial | Protects margin from silent cost creep  — cost-creep anomaly only; no price-history table |
+| PUR-05 | Supplier price history and price-change alerts | P1 | 🟡 Partial | Protects margin from silent cost creep : cost-creep anomaly only; no price-history table |
 
 ### 4.5 Reporting and profitability
 
@@ -459,7 +459,7 @@ intent, which has not changed.
 | AI-01 | Per-SKU demand forecast (7/14/28-day horizons) | P0 | ✅ Done | See [§7](#7-ai-architecture) |
 | AI-02 | Reorder-point and suggested-order-quantity list | P0 | ✅ Done | Actionable, one click to PO |
 | AI-03 | Sales and stock anomaly alerts | P0 | ✅ Done | Shrinkage and keying-error screening |
-| AI-04 | Natural-language assistant over store data | P0 | 🟡 Partial | Read-only tools only — deterministic local provider, not an external LLM |
+| AI-04 | Natural-language assistant over store data | P0 | 🟡 Partial | Read-only tools only: deterministic local provider, not an external LLM |
 | AI-05 | Margin erosion and price-change recommendations | P1 | 🟡 Partial | cost-creep finding only; no repricing suggestion |
 | AI-06 | Plain-language daily summary ("what happened today") | P1 | ⬜ Not built |  |
 | AI-07 | Seasonality insights and category trends | P2 | ⬜ Not built |  |
@@ -469,13 +469,13 @@ intent, which has not changed.
 | ID | Feature | Priority | Status | Notes |
 |---|---|---|---|---|
 | PLT-01 | Role-based access: Owner, Manager, Cashier, Viewer | P0 | ✅ Done | See [§8.3](#83-authorization) |
-| PLT-02 | Multi-outlet support in schema and queries | P0 | 🟡 Partial | One outlet enabled at launch  — schema and scoping support it; one outlet seeded |
+| PLT-02 | Multi-outlet support in schema and queries | P0 | 🟡 Partial | One outlet enabled at launch : schema and scoping support it; one outlet seeded |
 | PLT-03 | Full audit log with actor, entity, before/after | P0 | ✅ Done |  |
-| PLT-04 | Localised UI (en, fil) and configurable currency | P0 | 🟡 Partial | `PHP` default  — currency is per store; UI is English only |
+| PLT-04 | Localised UI (en, fil) and configurable currency | P0 | 🟡 Partial | `PHP` default : currency is per store; UI is English only |
 | PLT-05 | Daily automated backup + point-in-time WAL archive | P0 | ⬜ Not built |  |
 | PLT-06 | REST API with OpenAPI document and API keys | P0 | 🟡 Partial | REST API only; no API keys |
 | PLT-07 | Webhooks for sale / low-stock events | P2 | ⬜ Not built |  |
-| PLT-08 | Self-service restore and health endpoints | P0 | 🟡 Partial | `/healthz`, `/readyz`  — health probes yes; self-service restore no |
+| PLT-08 | Self-service restore and health endpoints | P0 | 🟡 Partial | `/healthz`, `/readyz` : health probes yes; self-service restore no |
 
 ---
 
@@ -494,15 +494,15 @@ below list what exists, not what was originally sketched.
 
 | Aspect | Convention |
 |---|---|
-| Base URL | `https://{host}/api/v1` — also mounted at `/api` for convenience |
+| Base URL | `https://{host}/api/v1`: also mounted at `/api` for convenience |
 | Format | JSON request and response bodies, UTF-8; body limit 1 MB |
-| Auth | `Authorization: Bearer <access_token>` — RS256 JWT, 15-minute lifetime |
+| Auth | `Authorization: Bearer <access_token>`: RS256 JWT, 15-minute lifetime |
 | Refresh | `POST /api/v1/auth/refresh` with the opaque refresh token in the body; tokens rotate and reuse revokes the family |
 | Idempotency | `Idempotency-Key: <uuid>` on `POST /api/v1/sales`; a replay returns the original sale with `"replayed": true` and HTTP 200 instead of 201 |
-| Tenancy | `X-Store-Id` header, validated against the token grant — a mismatch is a 403, never a wider read |
+| Tenancy | `X-Store-Id` header, validated against the token grant: a mismatch is a 403, never a wider read |
 | Pagination | `?page=1&per_page=50` (max 200) with a `meta` block. Ledger endpoints use offset paging, not cursors |
 | Time | ISO-8601 UTC on the wire; report ranges are date strings compared in UTC |
-| Money | Integer **centavos** in transit — never floats. Every column is `integer` and every aggregate is cast back with `::int` |
+| Money | Integer **centavos** in transit: never floats. Every column is `integer` and every aggregate is cast back with `::int` |
 | Rates | Basis points: `1200` = 12%. Store-level `vat_rate_bp` with `EXCLUSIVE` or `INCLUSIVE` tax mode |
 | Request tracing | Every response carries `X-Request-Id`; errors echo it as `request_id` |
 
@@ -536,14 +536,14 @@ Single resources return the object under `data`. Errors always use one shape:
 | 401 | `UNAUTHENTICATED`, `TOKEN_INVALID`, `REFRESH_TOKEN_REUSED`, `STORE_ACCESS_DENIED` |
 | 403 | `FORBIDDEN`, `STORE_ACCESS_DENIED` |
 | 404 | `NOT_FOUND` (also used as a body code for unknown entities in writes) |
-| 409 | `CONFLICT` — including a replayed `Idempotency-Key` and Postgres unique violations |
+| 409 | `CONFLICT`: including a replayed `Idempotency-Key` and Postgres unique violations |
 | 422 | `INSUFFICIENT_STOCK`, `BELOW_COST_PRICE`, `TENDER_MISMATCH`, `OVER_RECEIPT`, `INVALID_STATE_TRANSITION`, `INVALID_RETURN_QUANTITY` |
 | 429 | `RATE_LIMITED` |
-| 500 | `INTERNAL_ERROR` — the message is generic; `request_id` links to the log |
+| 500 | `INTERNAL_ERROR`: the message is generic; `request_id` links to the log |
 
 ### 5.3 Endpoints
 
-#### Authentication and users — mounted at `/api/v1/auth`
+#### Authentication and users: mounted at `/api/v1/auth`
 
 | Method | Path | Role | Description |
 |---|---|---|---|
@@ -554,7 +554,7 @@ Single resources return the object under `data`. Errors always use one shape:
 | GET | `/auth/users` | Owner | List users with roles |
 | POST | `/auth/users` | Owner | Create a user with a role in the caller's store |
 
-#### Catalog — mounted at `/api/v1`
+#### Catalog: mounted at `/api/v1`
 
 | Method | Path | Role | Description |
 |---|---|---|---|
@@ -563,13 +563,13 @@ Single resources return the object under `data`. Errors always use one shape:
 | GET | `/products/{id}` | any | Product with on-hand and value at cost |
 | PATCH | `/products/{id}` | `catalog:write` | Partial update of any writable field |
 | DELETE | `/products/{id}` | `catalog:write` | Soft delete; refused with 422 if stock history exists |
-| GET | `/products/barcode/{code}` | any | Barcode lookup — the hot POS path |
+| GET | `/products/barcode/{code}` | any | Barcode lookup: the hot POS path |
 | GET | `/products/{id}/ledger` | any | Movement history, newest first |
 | GET / POST | `/categories` | any / `catalog:write` | Category tree (`parent_id`, depth ≤ 2) |
 | GET / POST | `/suppliers` | any / `catalog:write` | Suppliers with `lead_time_days` |
 | GET / POST | `/customers` | any | Customer records |
 
-#### Inventory — mounted at `/api/v1/inventory`
+#### Inventory: mounted at `/api/v1/inventory`
 
 | Method | Path | Role | Description |
 |---|---|---|---|
@@ -582,7 +582,7 @@ Single resources return the object under `data`. Errors always use one shape:
 | GET | `/inventory/stocktakes/{id}` | any | Session with per-line variance |
 | POST | `/inventory/stocktakes/{id}/complete` | `stock:write` | Recompute from the ledger, post variances, close |
 
-#### Sales — mounted at `/api/v1`
+#### Sales: mounted at `/api/v1`
 
 | Method | Path | Role | Description |
 |---|---|---|---|
@@ -593,7 +593,7 @@ Single resources return the object under `data`. Errors always use one shape:
 | POST | `/sales/{id}/return` | `sales:return` | Return lines; restores stock at the original cost snapshot |
 | POST | `/sales/{id}/void` | `sales:void` | Void with a mandatory reason; reverses every line |
 
-#### Purchasing — mounted at `/api/v1`
+#### Purchasing: mounted at `/api/v1`
 
 | Method | Path | Role | Description |
 |---|---|---|---|
@@ -606,7 +606,7 @@ Single resources return the object under `data`. Errors always use one shape:
 
 Invalid transitions return 422 `INVALID_STATE_TRANSITION` with the allowed targets.
 
-#### Expenses and reports — mounted at `/api/v1`
+#### Expenses and reports: mounted at `/api/v1`
 
 | Method | Path | Role | Description |
 |---|---|---|---|
@@ -622,7 +622,7 @@ Invalid transitions return 422 `INVALID_STATE_TRANSITION` with the allowed targe
 All report endpoints accept `from` and `to` as `YYYY-MM-DD`, defaulting to the
 current month.
 
-#### AI — mounted at `/api/v1/ai`
+#### AI: mounted at `/api/v1/ai`
 
 | Method | Path | Role | Description |
 |---|---|---|---|
@@ -649,7 +649,7 @@ probe them without the version prefix.
 | GET | `/api/v1/meta` | none | Version, database driver, AI provider |
 | GET | `/api/v1/audit-logs` | Owner | Last 200 audit entries for the caller's store |
 
-### 5.4 Worked example — checkout
+### 5.4 Worked example: checkout
 
 Everything below was captured from the running application against the seeded
 demo store, not written by hand.
@@ -673,7 +673,7 @@ Content-Type: application/json
 }
 ```
 
-`unit_price_cents` is omitted, so the catalogue price is used — the server never
+`unit_price_cents` is omitted, so the catalogue price is used: the server never
 silently accepts a client-invented price. The demo store has `vat_rate_bp = 0`,
 which is why `tax_cents` is zero here.
 
@@ -761,7 +761,7 @@ Thank you!
 | Bucket | Limit | Status |
 |---|---|---|
 | `POST /auth/login` | 5 / min per IP + email | **Enforced**, in-process token bucket |
-| Everything else | — | **Not enforced.** The limiter exists in `shared/http.ts` and is wired only to login |
+| Everything else |: | **Not enforced.** The limiter exists in `shared/http.ts` and is wired only to login |
 
 Enforced responses carry `RateLimit-Limit`, `RateLimit-Remaining` and
 `RateLimit-Reset`. Because the bucket is in-process it is per replica; a
@@ -773,7 +773,7 @@ Redis-backed limiter is required before scaling past one instance.
 
 **PostgreSQL 16** in production; the embedded development database is PGlite,
 which reports `PostgreSQL 18.3 (PGlite 0.5.8)`. Migrations are plain SQL in
-`apps/api/src/db/migrations/`, applied forward-only by `src/db/migrate.ts` — each
+`apps/api/src/db/migrations/`, applied forward-only by `src/db/migrate.ts`: each
 file in its own transaction, recorded in the `migration` table. `0001_init.sql`
 creates **27 tables, 14 indexes and 25 CHECK constraints**.
 
@@ -896,7 +896,7 @@ All 28 tables (27 in `0001_init.sql`, plus `migration` created by the migrator).
 | `purchase_order_item` | Ordered and received quantities | `quantity > 0`, `received_qty >= 0` |
 | `sale` | POS transaction header | `UNIQUE(reference)`, `UNIQUE(idempotency_key)`; `status` CHECK |
 | `sale_item` | POS line with **cost snapshot** | `unit_cost_cents` written once, never updated |
-| `payment` | Tender lines per sale | `amount_cents >= 0` — a fully discounted ₱0 sale settles with a zero tender |
+| `payment` | Tender lines per sale | `amount_cents >= 0`: a fully discounted ₱0 sale settles with a zero tender |
 | `customer` | Buyer record and credit balance | `balance_cents` exists but is not yet written |
 | `expense_category` / `expense` | Operating costs for net profit | `UNIQUE(store_id, name)`; `amount_cents > 0` |
 | `forecast` | Per-SKU predictions with intervals and model score | `UNIQUE(product_id, horizon_date, model)` |
@@ -912,7 +912,7 @@ All 28 tables (27 in `0001_init.sql`, plus `migration` created by the migrator).
 
 ### 6.3 Design rules
 
-1. **Money is an `integer` number of centavos** — never `float`, and deliberately
+1. **Money is an `integer` number of centavos**: never `float`, and deliberately
    not `bigint`. Every aggregate is cast back with `::int` so no driver hands the
    application a BigInt or a numeric string. The ceiling is ₱21.4 M per value,
    which is far above a small store's line items and period totals.
@@ -928,11 +928,11 @@ All 28 tables (27 in `0001_init.sql`, plus `migration` created by the migrator).
    change, not just a bad parameter.
 5. **Soft delete** (`deleted_at`) for catalogue entities; a product with stock
    history cannot be deleted at all.
-6. **Primary keys are `gen_random_uuid()`** — random UUIDv4. *Revised from the
+6. **Primary keys are `gen_random_uuid()`**: random UUIDv4. *Revised from the
    planned UUIDv7:* the time-ordered benefit is not worth the extra dependency,
    and the time-based indexes below carry the ordering instead. `audit_log` and
    `job_queue` use `bigserial` for cheap monotonic ordering.
-7. **JSONB only for shapeless payloads** — audit changes, anomaly metrics,
+7. **JSONB only for shapeless payloads**: audit changes, anomaly metrics,
    suggestion reasons, tool calls. Nothing queried is stored as JSONB.
 
 ### 6.4 Indexes
@@ -946,7 +946,7 @@ All 14 as created.
 | `sale_item_product_idx` `(product_id, sale_id)` | Product performance and velocity |
 | `movement_product_time_idx` `(product_id, store_id, created_at DESC)` | Ledger paging and demand series |
 | `movement_reason_idx` `(reason, created_at DESC)` | Adjustment, spoilage and purchase sweeps |
-| `product_barcode_idx` `(barcode)` partial | POS barcode lookup — the hottest path |
+| `product_barcode_idx` `(barcode)` partial | POS barcode lookup: the hottest path |
 | `product_store_active_idx` `(store_id)` partial on `deleted_at IS NULL` | Catalogue listing |
 | `expense_store_date_idx` `(store_id, incurred_on)` | Period P&L |
 | `audit_entity_idx` `(entity, entity_id, created_at DESC)` | Entity history |
@@ -974,7 +974,7 @@ cost from the ledger so the seeded data satisfies invariant #1 by construction.
 
 Two independent subsystems share the store's data but not their failure modes.
 Forecasting is deterministic and runs in the job runner; the assistant is a
-request-scoped tool-calling pipeline. Neither can block a sale — both are
+request-scoped tool-calling pipeline. Neither can block a sale: both are
 consequences of one, queued rather than awaited.
 
 ```mermaid
@@ -984,7 +984,7 @@ flowchart TB
         Catalog["Catalog · supplier lead times · pack sizes"]
     end
 
-    subgraph ML["Forecasting — `forecast.refresh` job"]
+    subgraph ML["Forecasting: `forecast.refresh` job"]
         Feat["Demand series<br/>generate_series outer join, zero-filled"]
         Route{"intermittent?<br/>&gt; 60% zero days"}
         Croston["Croston smoothing<br/>size ÷ interval"]
@@ -1001,7 +1001,7 @@ flowchart TB
         Anom["Anomaly screen<br/>five wired rules"]
     end
 
-    subgraph LLM["Assistant — request scoped"]
+    subgraph LLM["Assistant: request scoped"]
         Redact["Input guard<br/>card + phone redaction, 2000-char cap"]
         Intent["Intent routing<br/>nine deterministic patterns"]
         Tools["Tool layer<br/>nine read-only, store-scoped, permission-checked"]
@@ -1032,9 +1032,9 @@ Implemented in `src/domain/forecast.ts`, driven by `refreshForecasts()`.
 | History window | 120 days, zero-filled so closed days count as zero demand |
 | Minimum history | 14 days (`2 × season length`); below that the row is tagged `insufficient-history` and the interval falls back to ±(25% of point + 0.5) |
 | Candidate models | Seasonal naive (weekday seasonality) and Holt-Winters triple exponential smoothing with additive seasonality, `α=0.35, β=0.05, γ=0.25` |
-| Selection | Expanding-window backtest per SKU. Holt-Winters is used only when it beats the baseline MAPE by more than 5% — otherwise the simpler model wins |
+| Selection | Expanding-window backtest per SKU. Holt-Winters is used only when it beats the baseline MAPE by more than 5%: otherwise the simpler model wins |
 | Intermittent demand | SKUs with more than 60% zero-demand days are routed to Croston smoothing instead of a smoothing model |
-| Interval | Point ± 1.2816σ, where σ is the standard deviation of that model's own backtest residuals — an 80% band, not an arbitrary percentage |
+| Interval | Point ± 1.2816σ, where σ is the standard deviation of that model's own backtest residuals: an 80% band, not an arbitrary percentage |
 | Determinism | Fixed seeds, no randomness, no clock reads inside the maths. The same series always yields the same forecast |
 | Persistence | Point, bounds, model name, MAPE and a feature hash per row, so every recommendation is traceable to the run that produced it |
 
@@ -1050,7 +1050,7 @@ suggested_qty    = 0 if raw_qty ≤ 0, else round_up_to_pack_size(ceil(raw_qty))
 ```
 
 A suggestion is suppressed when the SKU is inactive, inside an open stocktake, or
-already covered by an unreceived purchase order — the last of which is what stops
+already covered by an unreceived purchase order: the last of which is what stops
 the classic double-ordering bug, and it is asserted by a unit test.
 
 ### 7.2 Anomaly detection
@@ -1070,7 +1070,7 @@ by any job yet.
 
 Every finding stores the triggering metric, its threshold and the observed value
 in a JSONB `metric` column, and duplicates are suppressed while a finding for the
-same subject is still open. **No anomaly action is taken automatically** — the
+same subject is still open. **No anomaly action is taken automatically**: the
 system flags, the owner decides, and closing one requires a resolution note.
 
 ### 7.3 Assistant
@@ -1079,7 +1079,7 @@ Implemented in `src/modules/ai.ts` as `answerQuestion()`.
 
 | Concern | Shipped behaviour |
 |---|---|
-| Interface | `POST /api/v1/ai/chat` — one turn per request, JSON response. **No SSE streaming** |
+| Interface | `POST /api/v1/ai/chat`: one turn per request, JSON response. **No SSE streaming** |
 | Provider | `local`: a deterministic composer with no network dependency. The OpenAI, Anthropic and Ollama adapters described in the original design are **not implemented** |
 | Data access | **Tool calls only.** The model layer has no database handle, no connection string and no SQL |
 | Routing | Nine keyword patterns → intent → a fixed set of tools. Deterministic: the same question always produces the same tool calls, which is what makes it testable |
@@ -1096,7 +1096,7 @@ Implemented in `src/modules/ai.ts` as `answerQuestion()`.
 | Tool | Returns |
 |---|---|
 | `get_sales_summary(from, to)` | Sales count, net revenue, gross profit, margin |
-| `get_product_performance(limit)` | Per-SKU revenue, margin, units — worst gross profit first |
+| `get_product_performance(limit)` | Per-SKU revenue, margin, units: worst gross profit first |
 | `get_inventory_levels(low_stock)` | On-hand, reorder point, value at cost |
 | `get_profit_loss(from, to)` | Gross → net with expenses |
 | `get_inventory_ageing()` | Value by age bucket |
@@ -1117,7 +1117,7 @@ Implemented in `src/modules/ai.ts` as `answerQuestion()`.
 
 ### 7.5 Model governance
 
-- Model artifacts are not applicable — the forecasters are closed-form and
+- Model artifacts are not applicable: the forecasters are closed-form and
   versioned with the code. The model name and its MAPE are stored on every
   forecast row.
 - No training data leaves the process; the local provider makes no network call.
@@ -1144,7 +1144,7 @@ ceilings, response caching, and human feedback capture (`👍`/`👎`).
 | Parameterised SQL everywhere | ✅ | the data layer has no string interpolation of user input |
 | Security headers (CSP, `nosniff`, `no-referrer`, `DENY` framing) | ✅ | `main.ts` middleware |
 | Append-only audit log of state changes | ✅ | written inside the same transaction as the change |
-| Rate limiting | ⚠️ | login only — 5/min per IP+email. No other route is limited and the bucket is in-process |
+| Rate limiting | ⚠️ | login only: 5/min per IP+email. No other route is limited and the bucket is in-process |
 | Login rate limiting that survives multiple replicas | ❌ | needs a shared store |
 | TOTP second factor | ❌ | specified, not built |
 | Payment card handling | ✅ by absence | no card number is accepted or stored anywhere |
@@ -1194,9 +1194,9 @@ implemented it is listed here rather than left to be assumed.
 | Role | Catalog | Stock | Sales | Returns / voids | Purchasing | Expenses | Reports | AI | Users / audit |
 |---|---|---|---|---|---|---|---|---|---|
 | **Owner** | full | full | ✓ | full | full | full | all | ✓ | ✓ |
-| **Manager** | full | full | ✓ | ✓ | ✓ | ✓ | all | ✓ | — |
-| **Cashier** | read | read | ✓ | own returns | — | — | own shift | — | — |
-| **Viewer** | read | read | — | — | — | — | all | ✓ | — |
+| **Manager** | full | full | ✓ | ✓ | ✓ | ✓ | all | ✓ |: |
+| **Cashier** | read | read | ✓ | own returns |: |: | own shift |: |: |
+| **Viewer** | read | read |: |: |: |: | all | ✓ |: |
 
 - Enforcement is centralised in one middleware reading declarative per-route requirements, so
   there is exactly one place a permission can be granted and one place it can be checked.
@@ -1205,7 +1205,7 @@ implemented it is listed here rather than left to be assumed.
 
 ### 8.4 Application hardening
 
-- **Validation at the boundary** — every request body, query and path parameter is parsed
+- **Validation at the boundary**: every request body, query and path parameter is parsed
   through a zod schema before touching the service layer; unknown keys are rejected, not
   ignored.
 - **Security headers** via helmet: strict CSP, `X-Content-Type-Options: nosniff`,
@@ -1219,7 +1219,7 @@ implemented it is listed here rather than left to be assumed.
   non-guessable names, never executed.
 - **Background jobs** run under a separate least-privilege database role.
 - **Audit log** records authentication events, all writes to catalogue and stock, all voids and
-  adjustments, permission changes, report exports, and every AI tool call — with actor, IP,
+  adjustments, permission changes, report exports, and every AI tool call: with actor, IP,
   timestamp and before/after values. The audit log is append-only.
 
 ### 8.5 Data protection
@@ -1253,7 +1253,7 @@ implemented it is listed here rather than left to be assumed.
 
 ![Partial](https://img.shields.io/badge/status-partial-yellow)
 >
-> **Shipped:** 61 tests — 29 unit, 32 integration against a real PostgreSQL over
+> **Shipped:** 61 tests: 29 unit, 32 integration against a real PostgreSQL over
 > HTTP. Not yet: Playwright e2e, k6 load, coverage gates enforced in CI, mutation
 > testing on the costing module.
 
@@ -1298,7 +1298,7 @@ These are asserted explicitly, not assumed:
 4. Replaying a request with the same `Idempotency-Key` creates **exactly one** sale.
 5. Two concurrent checkouts for the last unit result in **one** success and one
    `INSUFFICIENT_STOCK`, never two successes and negative stock.
-6. No route is reachable by a role absent from the matrix in [§8.3](#83-authorization) —
+6. No route is reachable by a role absent from the matrix in [§8.3](#83-authorization):
    the RBAC table is data-driven and tested exhaustively against the route list.
 7. No API response contains `password_hash`, a refresh token, or a raw provider API key.
 8. AI tool calls cannot read a `store_id` the caller does not hold a grant for.
@@ -1309,7 +1309,7 @@ These are asserted explicitly, not assumed:
 - A deterministic **synthetic store** generator: 180 SKUs, 18 months of daily sales with
   weekday and month-end seasonality, injected stock-outs and anomalies, seeded from a fixed
   value so failures reproduce.
-- Time is always injected (`Clock` interface) — no test depends on the wall clock, which is what
+- Time is always injected (`Clock` interface): no test depends on the wall clock, which is what
   makes forecast and ageing tests deterministic.
 
 ### 9.5 Coverage and quality gates
@@ -1354,7 +1354,7 @@ and covered indirectly. Both are marked as open work in the roadmap.
 ![Partial](https://img.shields.io/badge/status-partial-yellow)
 >
 > **Shipped:** a multi-stage `Dockerfile`, `docker-compose.yml` with PostgreSQL 16,
-> and a non-root, health-checked image definition. **Not verified here** — the build
+> and a non-root, health-checked image definition. **Not verified here**: the build
 > sandbox has no Docker daemon, so these files are unexecuted.
 
 ### 10.1 Images
@@ -1362,7 +1362,7 @@ and covered indirectly. Both are marked as open work in the roadmap.
 | Image | Base | Contents | Entrypoint |
 |---|---|---|---|
 | `ims-api` | `node:20-alpine` pinned by digest | Compiled API, Prisma client, generated OpenAPI | `node dist/main.js` |
-| `ims-worker` | same as `ims-api` | Same layers, different entrypoint — no duplicated build | `node dist/worker.js` |
+| `ims-worker` | same as `ims-api` | Same layers, different entrypoint: no duplicated build | `node dist/worker.js` |
 | `ims-web` | `nginx:alpine` | Static React bundle, SPA fallback, caching headers, `/api` reverse proxy | `nginx` |
 
 All three run as a **non-root** user on a **read-only root filesystem** with an explicit
@@ -1491,7 +1491,7 @@ docker compose down -v              # stop and destroy data
 
 ### 10.5 Configuration
 
-Six environment variables are read. None is required — with no configuration the
+Six environment variables are read. None is required: with no configuration the
 app runs on an embedded PostgreSQL in `./.ims-data` with a freshly generated JWT
 key pair.
 
@@ -1519,7 +1519,7 @@ and tax mode live on the `store` row.
   limits so one replica cannot monopolise the queue.
 - Migrations run as a separate one-shot job before the new API revision receives traffic, never
   at container start in a multi-replica deployment.
-- Resource baseline: API 512 MiB, worker 512 MiB, Postgres 1.5 GiB, Redis 256 MiB — comfortably
+- Resource baseline: API 512 MiB, worker 512 MiB, Postgres 1.5 GiB, Redis 256 MiB: comfortably
   within a 2 vCPU / 4 GB host.
 
 ---
@@ -1564,8 +1564,8 @@ flowchart LR
 
 ### 11.2 Workflows
 
-One workflow exists: `.github/workflows/ci.yml`. **It has not been executed** —
-GitHub Actions cannot run from this environment — so its status is unverified.
+One workflow exists: `.github/workflows/ci.yml`. **It has not been executed**:
+GitHub Actions cannot run from this environment: so its status is unverified.
 
 | Job | Trigger | Steps |
 |---|---|---|
@@ -1602,10 +1602,10 @@ the preview-deployment job.
 Because a store cannot stop selling mid-migration, every schema change follows
 **expand → migrate → contract**:
 
-1. **Expand** — add the new column, table or index as nullable or with a default; deploy code
+1. **Expand**: add the new column, table or index as nullable or with a default; deploy code
    that writes to both old and new shapes and reads the old one.
-2. **Migrate** — backfill in batches; run the new read path behind a flag.
-3. **Contract** — only after a full release with no rollback, remove the old column in a
+2. **Migrate**: backfill in batches; run the new read path behind a flag.
+3. **Contract**: only after a full release with no rollback, remove the old column in a
    separate, explicitly reviewed migration.
 
 Additional rules: `CREATE INDEX CONCURRENTLY` for indexes on large tables, a statement timeout on
@@ -1624,7 +1624,7 @@ an applied migration.
 
 ## 12. Screenshots
 
-![Planned](https://img.shields.io/badge/status-planned-orange) — the UI has not been built yet, so
+![Planned](https://img.shields.io/badge/status-planned-orange): the UI has not been built yet, so
 there are no real captures to show. Placeholder slots are reserved below and committed under
 `docs/screenshots/` as each screen lands, so this section fills in without restructuring.
 
@@ -1656,7 +1656,7 @@ the gallery never drifts from the UI.
 
 ## 13. Demo
 
-![Partial](https://img.shields.io/badge/status-partial-yellow) — nothing is deployed yet. The steps
+![Partial](https://img.shields.io/badge/status-partial-yellow): nothing is deployed yet. The steps
 below are the intended experience and will work once the images in [§10](#10-docker-setup) exist.
 >
 > **Shipped:** the local run in §13.1 is real and verified. The hosted instance,
@@ -1671,7 +1671,7 @@ node bin/ims.js seed       # 38 SKUs, ~3,400 sales, 5 months of expenses (~12 s)
 node bin/ims.js start      # serves the API and the UI on http://localhost:3000
 ```
 
-No database server, no Redis and no Docker required — the app runs on an embedded
+No database server, no Redis and no Docker required: the app runs on an embedded
 PostgreSQL inside `./.ims-data`. To use a real server instead, set `DATABASE_URL`.
 
 | URL | What you get |
@@ -1695,15 +1695,15 @@ Seeded demo credentials (development only, never valid in production):
 1. **Log in as the cashier** and sell three items by barcode. Watch the margin indicator and the
    stock decrement.
 2. **Return one line.** Confirm the item goes back on hand at its *original* cost, not today's.
-3. **Log in as the owner** and open Profit & Loss for the current month — gross margin down to
+3. **Log in as the owner** and open Profit & Loss for the current month: gross margin down to
    net after recorded expenses.
 4. **Open Reorder suggestions.** Note the days-of-cover and the safety-stock maths behind each
    quantity, then convert the list into a draft purchase order in one click.
-5. **Receive the purchase order at a higher unit cost** and sell the item again — the new sale's
+5. **Receive the purchase order at a higher unit cost** and sell the item again: the new sale's
    cost snapshot reflects the change, so the margin shift is visible immediately.
 6. **Ask the assistant**: *"Which items lost money this month?"* The answer cites the report and
    figures it was built from.
-7. **Review the anomaly feed** — the seeded data contains deliberate shrinkage, a below-cost sale
+7. **Review the anomaly feed**: the seeded data contains deliberate shrinkage, a below-cost sale
    and a discount outlier.
 8. **Run a stocktake**, post the variance, and confirm the ledger reconciles to the new on-hand.
 
@@ -1728,8 +1728,8 @@ curl -s "http://localhost:3000/api/v1/ai/reorder-suggestions?limit=10" \
 
 | Resource | Status |
 |---|---|
-| Public demo instance | Not deployed — planned at `https://demo.<domain>` with reset-to-seed every 6 hours |
-| Screencast walkthrough | Not recorded — planned as `docs/demo/walkthrough.mp4` and a linked YouTube cut |
+| Public demo instance | Not deployed: planned at `https://demo.<domain>` with reset-to-seed every 6 hours |
+| Screencast walkthrough | Not recorded: planned as `docs/demo/walkthrough.mp4` and a linked YouTube cut |
 | API playground | Ships with the API at `/api/docs` |
 | Sample dataset | `apps/api/prisma/seed.ts` (180 SKUs, 18 months of sales, 12 months of expenses) |
 
@@ -1749,7 +1749,7 @@ Statuses reflect what is in this checkout. Each completed phase has its invarian
 | 4 | Purchasing, state machine, receiving, cost-basis updates | §3.3 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
 | 5 | Expenses, P&L, dashboard, product performance, ageing, turnover | §3.5, §4.5 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
 | 6 | Forecasting with model selection, reorder suggestions, anomaly screening | §7.1, §7.2 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
-| 7 | Assistant with read-only tool layer, grounding and redaction | §7.3 | ![Partial](https://img.shields.io/badge/status-partial-yellow) — local provider only |
+| 7 | Assistant with read-only tool layer, grounding and redaction | §7.3 | ![Partial](https://img.shields.io/badge/status-partial-yellow): local provider only |
 | 8 | Web UI (dashboard, POS, stock, reorder, P&L, assistant) | §13 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
 | 9 | Offline POS queue, CSV import/export, shifts, transfers, report exports | §4 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
 | 10 | Playwright e2e, k6 load, enforced coverage gates | §9 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
@@ -1761,10 +1761,10 @@ Statuses reflect what is in this checkout. Each completed phase has its invarian
 
 <div align="center">
 
-**Contributing** — pick a roadmap phase, open an issue for the slice you want, and keep the
+**Contributing**: pick a roadmap phase, open an issue for the slice you want, and keep the
 invariants in [§9.3](#93-invariants-that-must-never-break) green. Architecture changes go through
 an ADR in `docs/adr/` before code.
 
-**License** — MIT
+**License**: MIT
 
 </div>
