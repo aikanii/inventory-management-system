@@ -496,7 +496,7 @@ below list what exists, not what was originally sketched.
 |---|---|
 | Base URL | `https://{host}/api/v1`: also mounted at `/api` for convenience |
 | Format | JSON request and response bodies, UTF-8; body limit 1 MB |
-| Auth | `Authorization: Bearer <access_token>`: RS256 JWT, 15-minute lifetime |
+| Auth | `Authorization: Bearer <access_token>`: RS256 JWT, 15-minute lifetime. The scheme is matched case-insensitively (RFC 7235) |
 | Refresh | `POST /api/v1/auth/refresh` with the opaque refresh token in the body; tokens rotate and reuse revokes the family |
 | Idempotency | `Idempotency-Key: <uuid>` on `POST /api/v1/sales`; a replay returns the original sale with `"replayed": true` and HTTP 200 instead of 201 |
 | Tenancy | `X-Store-Id` header, validated against the token grant: a mismatch is a 403, never a wider read |
@@ -540,6 +540,21 @@ Single resources return the object under `data`. Errors always use one shape:
 | 422 | `INSUFFICIENT_STOCK`, `BELOW_COST_PRICE`, `TENDER_MISMATCH`, `OVER_RECEIPT`, `INVALID_STATE_TRANSITION`, `INVALID_RETURN_QUANTITY` |
 | 429 | `RATE_LIMITED` |
 | 500 | `INTERNAL_ERROR`: the message is generic; `request_id` links to the log |
+
+Every 401 carries a `WWW-Authenticate: Bearer realm="ims", error=…` challenge (RFC 6750 §3).
+The two 401s a client sees most often are deliberately distinct, so a caller can tell "send a
+token" from "send a *valid* token":
+
+| Situation | Code | Message |
+|---|---|---|
+| No `Authorization` header at all | `UNAUTHENTICATED` | `Missing bearer token.` |
+| Header present but expired, badly signed, malformed, or not the `Bearer` scheme | `TOKEN_INVALID` | `Access token expired.` / `Access token is invalid.` / `Authorization must be "Bearer <access_token>".` |
+
+A token the server cannot verify is always a 401, never a 500: the web client refreshes on
+401, and turning an expiry into an `INTERNAL_ERROR` would strand the session instead of
+rotating it. When a refresh cannot recover the session, the client clears its stored tokens
+and returns to the sign-in screen with the server's reason rather than retrying without a
+token.
 
 ### 5.3 Endpoints
 
@@ -1183,6 +1198,9 @@ implemented it is listed here rather than left to be assumed.
   JWKS so verification never requires a database lookup.
 - **Refresh token**: opaque, 30 days, rotating, stored hashed, family-tracked for reuse
   detection.
+- An expired, badly signed or malformed access token is a 401 `TOKEN_INVALID`; the jose
+  verification errors never escape as a 500, because the client's refresh-on-401 depends on
+  that distinction.
 - Failed-login and password-reset endpoints are rate limited and emit identical responses for
   unknown accounts and wrong passwords to avoid account enumeration.
 - TOTP second factor for Owner and Manager roles is specified but **not implemented**.

@@ -13,7 +13,10 @@ import { openDatabase, type Database } from './db/database.js';
 import { migrate, schemaRevision } from './db/migrate.js';
 import { ensureJwtKeys, type JwtKeys } from './shared/security.js';
 import { createQueue, buildHandlers, type Queue } from './worker/index.js';
-import { errorHandler, notFoundHandler, requestIdMiddleware, type AppContext } from './shared/http.js';
+import {
+  authenticate, asyncHandler, errorHandler, notFoundHandler, ok, requestIdMiddleware, resolveStore,
+  type AppContext, type AuthedRequest,
+} from './shared/http.js';
 import { authRouter } from './modules/auth.js';
 import { catalogRouter } from './modules/catalog.js';
 import { inventoryRouter } from './modules/inventory.js';
@@ -21,7 +24,7 @@ import { salesRouter } from './modules/sales.js';
 import { purchasingRouter } from './modules/purchasing.js';
 import { reportingRouter } from './modules/reporting.js';
 import { aiRouter } from './modules/ai.js';
-import { rateLimited } from './shared/errors.js';
+import { forbidden } from './shared/errors.js';
 
 export const VERSION = '0.1.0';
 
@@ -89,22 +92,20 @@ export function createApp(ctx: AppContext): Express {
   api.use('/', purchasingRouter(ctx));
   api.use('/', reportingRouter(ctx));
   api.use('/ai', aiRouter(ctx));
-  api.get('/audit-logs', async (req, res, next) => {
-    try {
-      const auth = req.auth;
-      if (!auth || auth.role !== 'OWNER') throw rateLimited('Owner role required for the audit log.');
-      const rows = await ctx.db.query(
-        `SELECT a.*, u.email AS actor_email FROM audit_log a
-           LEFT JOIN app_user u ON u.id = a.actor_id
-          WHERE ($1::uuid IS NULL OR a.store_id = $1)
-          ORDER BY a.id DESC LIMIT 200`,
-        [auth.storeId],
-      );
-      res.json({ data: rows.rows });
-    } catch (err) {
-      next(err);
-    }
-  });
+  // Audit trail. `authenticate` has to be explicit here: this route is mounted
+  // directly on the API router, so it does not inherit the middleware that the
+  // feature routers install on themselves.
+  api.get('/audit-logs', authenticate(ctx), resolveStore(ctx), asyncHandler<AuthedRequest>(async (req, res) => {
+    if (req.auth.role !== 'OWNER') throw forbidden('Owner role required for the audit log.');
+    const rows = await ctx.db.query(
+      `SELECT a.*, u.email AS actor_email FROM audit_log a
+         LEFT JOIN app_user u ON u.id = a.actor_id
+        WHERE ($1::uuid IS NULL OR a.store_id = $1)
+        ORDER BY a.id DESC LIMIT 200`,
+      [req.auth.storeId],
+    );
+    ok(res, rows.rows);
+  }));
 
   app.use('/api/v1', api);
   app.use('/api', api);

@@ -28,6 +28,32 @@ export const session = {
   },
 };
 
+// A 401 that cannot be refreshed means the session is over. The UI subscribes so
+// it drops back to the login screen with the real reason, instead of keeping its
+// authed shell and firing every later request without an Authorization header —
+// which is how a user ends up staring at "Missing bearer token."
+type ExpiredHandler = (reason: string) => void;
+const expiredHandlers = new Set<ExpiredHandler>();
+
+export function onSessionExpired(handler: ExpiredHandler): () => void {
+  expiredHandlers.add(handler);
+  return () => {
+    expiredHandlers.delete(handler);
+  };
+}
+
+function expireSession(reason: string): void {
+  const hadSession = Boolean(accessToken);
+  session.clear();
+  if (!hadSession) return;
+  for (const handler of expiredHandlers) handler(reason);
+}
+
+/** Endpoints that carry no access token by design: never refresh on their 401s. */
+function isAuthEndpoint(path: string): boolean {
+  return /^\/api(\/v1)?\/auth\/(login|refresh|logout)$/.test(path);
+}
+
 export function saveSession(data: any): void {
   accessToken = data.access_token;
   refreshToken = data.refresh_token;
@@ -65,7 +91,10 @@ async function raw(path: string, init: RequestInit = {}, retry = true): Promise<
   if (storeId) headers.set('x-store-id', storeId);
   const res = await fetch(path, { ...init, headers });
 
-  if (res.status === 401 && retry && refreshToken) {
+  if (res.status !== 401 || isAuthEndpoint(path)) return res;
+
+  // The access token is short-lived; a 401 is normally just "rotate and go".
+  if (retry && refreshToken) {
     const refreshed = await fetch('/api/v1/auth/refresh', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -79,8 +108,12 @@ async function raw(path: string, init: RequestInit = {}, retry = true): Promise<
       localStorage.setItem('ims.refresh', body.data.refresh_token);
       return raw(path, init, false);
     }
-    session.clear();
+    const failure = await refreshed.json().catch(() => null);
+    expireSession(failure?.error?.message ?? 'Your session has expired. Please sign in again.');
+    return res;
   }
+
+  expireSession('Your session has expired. Please sign in again.');
   return res;
 }
 

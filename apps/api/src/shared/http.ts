@@ -3,7 +3,7 @@ import type { ZodType } from 'zod';
 import type { Database } from '../db/database.js';
 import type { JwtKeys, Permission, Role } from './security.js';
 import { verifyAccessToken } from './security.js';
-import { ApiError, badRequest, notFound, rateLimited } from './errors.js';
+import { ApiError, badRequest, notFound, rateLimited, unauthenticated } from './errors.js';
 
 export interface Auth {
   userId: string;
@@ -102,21 +102,42 @@ export function pageMeta(page: Page, total: number): Record<string, unknown> {
 export function authenticate(ctx: AppContext): RequestHandler {
   return asyncHandler<Request>(async (req, _res, next) => {
     const header = req.header('authorization');
-    if (!header?.startsWith('Bearer ')) throw unauthenticatedMissing();
-    const claims = await verifyAccessToken(ctx.keys, header.slice(7));
+    if (!header || header.trim() === '') throw missingBearerToken();
+    // RFC 7235 §2.1: the auth-scheme is case-insensitive, so `bearer <token>` is
+    // as valid as `Bearer <token>`. Only a header with no credential at all — or
+    // a different scheme entirely — is rejected, and it is rejected as a bad
+    // token rather than a missing one.
+    const match = /^bearer[ \t]+(\S+)[ \t]*$/i.exec(header.trim());
+    if (!match) {
+      throw new ApiError(401, 'TOKEN_INVALID', 'Authorization must be "Bearer <access_token>".');
+    }
+    const claims = await verifyAccessToken(ctx.keys, match[1] as string);
     req.auth = { userId: claims.sub, role: claims.role, storeId: claims.storeId };
     next();
   });
 }
 
-function unauthenticatedMissing(): ApiError {
+/** The one 401 that means what it says: no `Authorization` header was sent. */
+export function missingBearerToken(): ApiError {
   return new ApiError(401, 'UNAUTHENTICATED', 'Missing bearer token.');
+}
+
+/**
+ * `WWW-Authenticate` challenge for a 401, per RFC 6750 §3. `error_description`
+ * is a header value, so it is flattened to ASCII and stripped of quotes.
+ */
+export function bearerChallenge(err: ApiError): string {
+  const error = err.code === 'UNAUTHENTICATED' ? 'invalid_request' : 'invalid_token';
+  const description = err.message.replace(/[^\x20-\x7e]/g, ' ').replace(/"/g, "'");
+  return `Bearer realm="ims", error="${error}", error_description="${description}"`;
 }
 
 export function requirePermission(permission: Permission): RequestHandler {
   return (req, _res, next) => {
     const auth = req.auth;
-    if (!auth) return next(unauthenticatedMissing());
+    // Reaching this without `authenticate` in front of it is a wiring mistake,
+    // not a client mistake — but it is still a 401, never a silent pass.
+    if (!auth) return next(unauthenticated());
     const allowed: Record<Role, boolean> = {
       OWNER: true,
       MANAGER: permission !== 'users:manage' && permission !== 'audit:read',
@@ -137,7 +158,7 @@ export function requirePermission(permission: Permission): RequestHandler {
 export function resolveStore(ctx: AppContext): RequestHandler {
   return asyncHandler<Request>(async (req, _res, next) => {
     const auth = req.auth;
-    if (!auth) throw unauthenticatedMissing();
+    if (!auth) throw unauthenticated();
     const header = req.header('x-store-id');
     if (header && header !== auth.storeId) {
       throw new ApiError(403, 'STORE_ACCESS_DENIED', 'X-Store-Id does not match the token grant.');
@@ -197,6 +218,7 @@ export function errorHandler(
 ): void {
   const requestId = req.requestId;
   if (err instanceof ApiError) {
+    if (err.status === 401) res.setHeader('WWW-Authenticate', bearerChallenge(err));
     res.status(err.status).json({
       error: { code: err.code, message: err.message, details: err.details, request_id: requestId },
     });
