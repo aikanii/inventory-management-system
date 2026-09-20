@@ -1,0 +1,28 @@
+{
+  "name": "inventory-management-system",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sales, stock and profitability system for small-scale stores",
+  "type": "module",
+  "bin": {
+    "ims": "bin/ims.js"
+  },
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "build": "pnpm --filter @ims/api build && pnpm --filter @ims/web build",
+    "start": "node bin/ims.js start",
+    "dev": "pnpm --filter @ims/api dev",
+    "seed": "node bin/ims.js seed",
+    "migrate": "node bin/ims.js migrate",
+    "reset": "node bin/ims.js reset",
+    "test": "pnpm --filter @ims/api test",
+    "typecheck": "pnpm --filter @ims/api typecheck",
+    "lint": "echo \"(eslint config lands with the CI hardening phase)\""
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  },
+  "packageManager": "pnpm@9.15.9"
+}

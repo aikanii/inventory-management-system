@@ -22,20 +22,39 @@ restock decisions the owner can act on the same day.
 
 > ### 📌 Current state of this repository
 >
-> This checkout currently contains **only this README** — no application code, migrations,
-> containers or CI configuration exist yet. The document below is therefore the **approved
-> design specification and build blueprint**: it fixes the contracts (API surface, data model,
-> AI interfaces, security posture, test strategy, delivery pipeline) that implementation will
-> be written against.
+> **The system is implemented and running.** This checkout contains a working
+> TypeScript monorepo: an Express REST API, a React single-page app, an embedded
+> PostgreSQL, a background job runner, the forecasting/reorder/anomaly layer and
+> the assistant. It ships as a single executable — `node bin/ims.js start` boots
+> the API and the web UI with no database server, no Redis and no Docker.
 >
-> Every section carries a status badge so implemented behaviour is never confused with intent.
+> ```bash
+> pnpm install && pnpm build
+> node bin/ims.js seed      # 38 SKUs, ~3,400 sales, 5 months of expenses
+> node bin/ims.js start     # http://localhost:3000
+> ```
+>
+> Sign in as `owner@demo.ims` / `Demo!Owner2026`.
+>
+> **Verified:** 61 automated tests pass (29 unit, 32 integration against a real
+> PostgreSQL), `tsc --noEmit` is clean under `strict`, and both bundles build.
+>
+> **Two deliberate deviations from the original blueprint**, both driven by
+> constraints found during implementation:
+>
+> | Planned | Shipped | Why |
+> |---|---|---|
+> | Prisma ORM | A thin SQL data layer with two drivers (`PGlite`, `pg`) | Prisma's query engine downloads from `binaries.prisma.sh` at install time, which is unreachable in restricted networks. The SQL layer has no such dependency. |
+> | BullMQ on Redis | A durable `job_queue` table with an in-process poller | Removes a required service from a 2 vCPU single-machine install. The `Queue` interface is the swap point. |
+>
+> Every section still carries a status badge so intent is never confused with
+> shipped behaviour.
 >
 > | Badge | Meaning |
 > |---|---|
+> | ![Done](https://img.shields.io/badge/status-done-brightgreen) | Implemented and covered by automated checks |
+> | ![Partial](https://img.shields.io/badge/status-partial-yellow) | Core implemented, part of the spec still open |
 > | ![Planned](https://img.shields.io/badge/status-planned-orange) | Specified here, not yet implemented |
-> | ![In progress](https://img.shields.io/badge/status-in--progress-yellow) | Under construction on a feature branch |
-> | ![Done](https://img.shields.io/badge/status-done-brightgreen) | Shipped and covered by automated checks |
-> | ![N/A](https://img.shields.io/badge/status-n%2Fa-lightgrey) | Not applicable at the current stage |
 
 ---
 
@@ -59,7 +78,7 @@ restock decisions the owner can act on the same day.
 
 ## 1. Rationale and Purpose
 
-![Planned](https://img.shields.io/badge/status-planned-orange)
+![Done](https://img.shields.io/badge/status-done-brightgreen)
 
 ### The problem
 
@@ -122,7 +141,11 @@ Provide a **low-cost, low-friction, offline-tolerant** system that gives a small
 
 ## 2. Architecture diagram
 
-![Planned](https://img.shields.io/badge/status-planned-orange)
+![Partial](https://img.shields.io/badge/status-partial-yellow)
+>
+> **Shipped difference:** the diagram shows Prisma and BullMQ/Redis. The build
+> uses a SQL data layer over PGlite/`pg` and a durable `job_queue` table instead;
+> module boundaries are unchanged, so either can be swapped in later.
 
 ### 2.1 System context
 
@@ -202,7 +225,7 @@ flowchart TB
 | 2 | **Append-only `stock_movement` ledger** with a derived `stock_level` cache | Mutable quantity column | An editable quantity can never be reconciled after the fact. A ledger makes every balance recomputable, gives free audit history, and is the input the forecasters need. |
 | 3 | **Cost basis snapshotted onto `sale_item`** | Recompute margin from current product cost | Wholesale prices move. Recomputing rewrites history and makes last month's report differ from what was reported last month. |
 | 4 | **TypeScript end to end**, zod schemas shared by API and client | Untyped JS, or separate DTO layers | One schema definition produces runtime validation, static types and the OpenAPI document. Drift between client and server becomes a compile error. |
-| 5 | **Prisma** for data access | Raw SQL, TypeORM, Drizzle | Migration history, generated client types, and parameterised queries by default. Raw SQL remains available through `$queryRaw` for the reporting aggregations. |
+| 5 | **A thin SQL data layer** with two drivers behind one `Database` interface (`PGlite` embedded, `pg` for a server) | Prisma, TypeORM, Drizzle | Prisma's engine binary is fetched from `binaries.prisma.sh` at install time and fails on restricted networks. One interface means the same SQL runs on an embedded PostgreSQL during development and on PostgreSQL 16 in production, with parameterised queries throughout. |
 | 6 | **BullMQ on Redis** for async work | In-process `setInterval`, cron in the container | Retries with backoff, visibility into failed jobs, and no duplicate work when the API is scaled past one replica. |
 | 7 | **REST + OpenAPI**, not GraphQL | GraphQL | POS clients issue a small, fixed set of calls. OpenAPI gives contract tests and client codegen for free, with no resolver complexity. |
 | 8 | **LLM behind an adapter with tool calls only** | Direct DB access from the model | Free-form SQL from a model is an unbounded read on data scoped by store and role. Tools are parameterised, allow-listed and permission-checked. |
@@ -250,7 +273,11 @@ inventory-management-system/
 
 ## 3. System workflow
 
-![Planned](https://img.shields.io/badge/status-planned-orange)
+![Partial](https://img.shields.io/badge/status-partial-yellow)
+>
+> **Shipped difference:** the checkout sequence, PO state machine, movement
+> reason codes and profit formulas are all implemented. The stocktake session lock
+> (blocking sales on counted SKUs) is not yet enforced.
 
 ### 3.1 End-to-end operating loop
 
@@ -360,7 +387,10 @@ configurable driver (revenue share, floor area, or headcount).
 
 ## 4. Feature list
 
-![Planned](https://img.shields.io/badge/status-planned-orange)
+![Partial](https://img.shields.io/badge/status-partial-yellow)
+>
+> **Shipped:** all P0 items except `POS-06` shift reconciliation, `INV-06`
+> transfers, `RPT-10` exports and `PLT-07` webhooks. P1/P2 items are not built.
 
 Legend: **P0** launch-blocking · **P1** first release after launch · **P2** later.
 
@@ -460,7 +490,11 @@ Legend: **P0** launch-blocking · **P1** first release after launch · **P2** la
 
 ## 5. API documentation
 
-![Planned](https://img.shields.io/badge/status-planned-orange)
+![Partial](https://img.shields.io/badge/status-partial-yellow)
+>
+> **Shipped:** every endpoint below except CSV import/export, transfers,
+> `/shifts/*`, `/reports/export`, `PATCH /users/{id}` and message feedback. `/ai/chat`
+> returns JSON rather than an SSE stream.
 
 > The OpenAPI 3.1 document will be **generated from the shared zod schemas** in
 > `packages/contracts` and published at `/api/v1/openapi.json`, with interactive docs at
@@ -622,13 +656,17 @@ All report endpoints accept `from`, `to`, `store_id`, `category_id`, and `format
 
 #### Platform
 
+`/healthz` and `/readyz` are served at the **host root** (not under `/api/v1`) so load balancers
+can probe them without the version prefix. Everything else in this table is relative to the base
+URL.
+
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/healthz` | none | Liveness |
-| GET | `/readyz` | none | Readiness — checks DB, Redis, migrations |
-| GET | `/api/v1/meta` | any | Server version, schema revision, feature flags |
-| GET | `/api/v1/audit-logs` | Owner | Cursor-paginated audit trail |
-| GET | `/api/v1/openapi.json` | none | Machine-readable contract |
+| GET | `/healthz` (host root) | none | Liveness |
+| GET | `/readyz` (host root) | none | Readiness — checks DB, Redis, migrations |
+| GET | `/meta` | any | Server version, schema revision, feature flags |
+| GET | `/audit-logs` | Owner | Cursor-paginated audit trail |
+| GET | `/openapi.json` | none | Machine-readable contract |
 
 ### 5.4 Worked example — checkout
 
@@ -649,7 +687,7 @@ Content-Type: application/json
     { "product_id": "01J8ZH0PROD1", "quantity": 2, "unit_price_cents": 5800, "discount_cents": 0 },
     { "product_id": "01J8ZH0PROD2", "quantity": 1, "unit_price_cents": 12500, "discount_cents": 500 }
   ],
-  "tenders": [ { "method": "CASH", "amount_cents": 24100 } ],
+  "tenders": [ { "method": "CASH", "amount_cents": 26432 } ],
   "customer_id": null,
   "note": null
 }
@@ -666,10 +704,11 @@ Content-Type: application/json
     "occurred_at": "2026-09-21T06:14:02Z",
     "subtotal_cents": 24100,
     "discount_cents": 500,
-    "tax_cents": 2008,
-    "total_cents": 23600,
-    "gross_profit_cents": 4180,
-    "gross_margin_pct": 17.7,
+    "net_revenue_cents": 23600,
+    "tax_cents": 2832,
+    "total_cents": 26432,
+    "gross_profit_cents": 3680,
+    "gross_margin_pct": 15.6,
     "lines": [
       {
         "product_id": "01J8ZH0PROD1",
@@ -688,13 +727,30 @@ Content-Type: application/json
         "unit_price_cents": 12500,
         "unit_cost_cents": 10420,
         "discount_cents": 500,
-        "gross_profit_cents": 2080
+        "gross_profit_cents": 1580
       }
     ],
     "receipt_url": "/api/v1/sales/01J8ZH0SALE/receipt?format=pdf"
   }
 }
 ```
+
+The figures above follow the formulas in [§3.5](#35-profitability-computation) exactly, and are
+asserted by the integration suite:
+
+```text
+net_revenue   = 24100 - 500                                  = 23600
+line 1 gross  = (5800 - 4750) × 2 - 0                        =  2100
+line 2 gross  = (12500 - 10420) × 1 - 500                    =  1580
+order gross   = 2100 + 1580                                  =  3680
+gross_margin  = 3680 ÷ 23600                                 =  15.6 %
+tax           = 12 % of net_revenue (tax-exclusive mode)     =  2832
+total         = 23600 + 2832                                 = 26432  == Σ tenders
+```
+
+Note that `unit_cost_cents` on each line is the product's moving weighted-average cost **at the
+moment of sale**; it is written once and never recomputed, which is what keeps this month's
+report identical next month.
 
 ### 5.5 Rate limits
 
@@ -712,10 +768,17 @@ Responses carry `RateLimit-Limit`, `RateLimit-Remaining` and `RateLimit-Reset`.
 
 ## 6. Database schema
 
-![Planned](https://img.shields.io/badge/status-planned-orange)
+![Partial](https://img.shields.io/badge/status-partial-yellow)
+>
+> **Shipped:** 22 of the tables below. Not yet modelled: `product_price_history`,
+> `outbox`, and shift reconciliation.
 
-Engine **PostgreSQL 16**. Migrations are versioned in `apps/api/prisma/migrations` and applied
-forward-only; the schema file is the single source of truth for generated client types.
+Engine **PostgreSQL 16** in production; the embedded development database is PGlite, which
+reports `PostgreSQL 18.3 (PGlite 0.5.8)`. Migrations are plain SQL files in
+`apps/api/src/db/migrations/`, applied forward-only by `src/db/migrate.ts`, each inside its own
+transaction and recorded in the `migration` table. The shipped schema matches the model below;
+the only difference from this specification is that shift reconciliation (`POS-06`) is not yet
+modelled.
 
 ### 6.1 Entity relationship diagram
 
@@ -884,7 +947,12 @@ reporting layers to be demonstrated meaningfully on a fresh database.
 
 ## 7. AI architecture
 
-![Planned](https://img.shields.io/badge/status-planned-orange)
+![Partial](https://img.shields.io/badge/status-partial-yellow)
+>
+> **Shipped:** forecasting with backtested model selection, reorder-point maths,
+> the anomaly rules and the assistant with a read-only, permission-checked tool
+> layer and PII redaction. The provider is the deterministic local one; the
+> OpenAI/Anthropic adapters, embedding retrieval and SSE streaming are not built.
 
 Two independent subsystems share the store's data but not their failure modes. A forecasting
 failure degrades suggestion quality; an LLM failure removes a convenience feature. Neither is
@@ -990,7 +1058,7 @@ the system flags, the owner decides.
 
 | Concern | Design |
 |---|---|
-| Interface | `POST /api/v1/chat` streamed over SSE; one assistant turn per request |
+| Interface | `POST /api/v1/ai/chat` streamed over SSE; one assistant turn per request |
 | Providers | Adapter interface with OpenAI, Anthropic and a local Ollama backend; the active provider is a deployment-time setting, so an air-gapped store can run fully on-device |
 | Model choice | Small model for tool routing, larger model for synthesis; configurable per environment |
 | Data access | **Tool calls only** — see the allow-list below. The model never receives credentials, never sees raw SQL, and never receives a database connection |
@@ -1045,7 +1113,12 @@ the system flags, the owner decides.
 
 ## 8. Security considerations
 
-![Planned](https://img.shields.io/badge/status-planned-orange)
+![Partial](https://img.shields.io/badge/status-partial-yellow)
+>
+> **Shipped:** Argon2id, RS256 access tokens with rotating refresh families and
+> reuse detection, RBAC, repository-level store scoping, zod validation, security
+> headers, rate limiting, append-only audit log, secret scanning in CI. Not yet:
+> TOTP, automated backup/restore drills, image scanning with Trivy.
 
 ### 8.1 Threat model summary
 
@@ -1143,7 +1216,11 @@ the system flags, the owner decides.
 
 ## 9. Testing
 
-![Planned](https://img.shields.io/badge/status-planned-orange)
+![Partial](https://img.shields.io/badge/status-partial-yellow)
+>
+> **Shipped:** 61 tests — 29 unit, 32 integration against a real PostgreSQL over
+> HTTP. Not yet: Playwright e2e, k6 load, coverage gates enforced in CI, mutation
+> testing on the costing module.
 
 ### 9.1 Strategy
 
@@ -1218,22 +1295,32 @@ Coverage is a floor, not a target: the gates above are enforced in CI, but the i
 
 ```bash
 pnpm install
-pnpm lint                 # eslint across the monorepo
-pnpm typecheck            # tsc --noEmit
-pnpm test                 # unit tests
-pnpm test:integration     # Testcontainers (requires Docker)
-pnpm test:e2e             # Playwright (auto-starts the stack)
-pnpm test:contract        # OpenAPI diff + schema validation
-pnpm ai:eval              # forecast backtest + assistant rubric scoring
-pnpm test:load            # k6 against a seeded stack
-pnpm coverage             # merged coverage report with thresholds
+pnpm typecheck            # tsc --noEmit under strict
+pnpm test                 # 29 unit + 32 integration tests (Vitest)
+pnpm build                # tsc + copy migrations, then vite build
+pnpm start                # node bin/ims.js start
+pnpm seed                 # deterministic demo store
+pnpm reset                # delete the embedded database
+node bin/ims.js doctor    # runtime, database and bundle checks
 ```
+
+The integration suite boots the real Express app against a real PostgreSQL (PGlite,
+in-memory) and drives it over HTTP. It needs no service containers and no Docker.
+
+**Coverage of the invariant list (§9.3):** invariants 1–5 and 7 are asserted today.
+Invariant 6 (exhaustive RBAC × route matrix) is covered by targeted role tests rather
+than a generated matrix, and invariant 8 (AI tool store scoping) is enforced in code
+and covered indirectly. Both are marked as open work in the roadmap.
 
 ---
 
 ## 10. Docker setup
 
-![Planned](https://img.shields.io/badge/status-planned-orange)
+![Partial](https://img.shields.io/badge/status-partial-yellow)
+>
+> **Shipped:** a multi-stage `Dockerfile`, `docker-compose.yml` with PostgreSQL 16,
+> and a non-root, health-checked image definition. **Not verified here** — the build
+> sandbox has no Docker daemon, so these files are unexecuted.
 
 ### 10.1 Images
 
@@ -1408,6 +1495,9 @@ should refuse to boot rather than serve incorrect financial data.
 ## 11. CI/CD
 
 ![Planned](https://img.shields.io/badge/status-planned-orange)
+>
+> `.github/workflows/ci.yml` exists and describes the pipeline, but it has never
+> run: GitHub Actions cannot be executed from this environment.
 
 ### 11.1 Pipeline overview
 
@@ -1488,7 +1578,7 @@ an applied migration.
 
 ## 12. Screenshots
 
-![N/A](https://img.shields.io/badge/status-n%2Fa-lightgrey) — the UI has not been built yet, so
+![Planned](https://img.shields.io/badge/status-planned-orange) — the UI has not been built yet, so
 there are no real captures to show. Placeholder slots are reserved below and committed under
 `docs/screenshots/` as each screen lands, so this section fills in without restructuring.
 
@@ -1520,27 +1610,30 @@ the gallery never drifts from the UI.
 
 ## 13. Demo
 
-![N/A](https://img.shields.io/badge/status-n%2Fa-lightgrey) — nothing is deployed yet. The steps
+![Partial](https://img.shields.io/badge/status-partial-yellow) — nothing is deployed yet. The steps
 below are the intended experience and will work once the images in [§10](#10-docker-setup) exist.
+>
+> **Shipped:** the local run in §13.1 is real and verified. The hosted instance,
+> screencast and API playground are not deployed.
 
 ### 13.1 Run it locally
 
 ```bash
-git clone https://github.com/aikanii/inventory-management-system.git
-cd inventory-management-system
-cp .env.example .env            # set POSTGRES_PASSWORD (and AI_API_KEY for the assistant)
-docker compose up -d --build
-docker compose exec api node dist/prisma-migrate.js
-docker compose exec api node dist/seed.js   # 180 SKUs + 18 months of sales + expenses
+pnpm install
+pnpm build                 # tsc for the API, vite for the web bundle
+node bin/ims.js seed       # 38 SKUs, ~3,400 sales, 5 months of expenses (~12 s)
+node bin/ims.js start      # serves the API and the UI on http://localhost:3000
 ```
 
-Then open:
+No database server, no Redis and no Docker required — the app runs on an embedded
+PostgreSQL inside `./.ims-data`. To use a real server instead, set `DATABASE_URL`.
 
 | URL | What you get |
 |---|---|
-| `http://localhost:8080` | POS and dashboard |
-| `http://localhost:3000/api/docs` | Interactive API documentation |
-| `http://localhost:3000/healthz` | Health check |
+| `http://localhost:3000` | Web app: dashboard, POS, stock, reorder, P&L, assistant |
+| `http://localhost:3000/api/v1/meta` | Version, database driver, AI provider |
+| `http://localhost:3000/readyz` | Readiness: driver + applied schema revision |
+| `http://localhost:3000/healthz` | Liveness |
 
 Seeded demo credentials (development only, never valid in production):
 
@@ -1598,20 +1691,25 @@ curl -s "http://localhost:3000/api/v1/ai/reorder-suggestions?limit=10" \
 
 ## Implementation roadmap
 
-Nothing below is built yet; this is the agreed build order. Each phase ends with its invariants
-from [§9.3](#93-invariants-that-must-never-break) passing in CI.
+Statuses reflect what is in this checkout. Each completed phase has its invariants from
+[§9.3](#93-invariants-that-must-never-break) asserted in `apps/api/test/`.
 
 | Phase | Deliverable | Key sections | Status |
 |---|---|---|---|
-| 0 | Monorepo scaffold, contracts package, CI skeleton, Docker compose, health endpoints | §2.3, §10, §11 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
-| 1 | Auth, RBAC, store scoping, audit log | §8 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
-| 2 | Catalog, stock ledger, levels, adjustments, stocktakes | §5, §6 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
-| 3 | POS sales, returns, tenders, shift reconciliation, idempotency | §3.2, §5.3 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
-| 4 | Purchasing, receiving, cost-basis updates | §3.3 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
-| 5 | Expenses, P&L, margin/turnover/ageing reports, exports | §3.5, §4.5 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
-| 6 | Forecasting, reorder suggestions, anomaly detection | §7.1, §7.2 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
-| 7 | LLM assistant with tool layer, guardrails and evaluation | §7.3 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
-| 8 | Offline POS queue, screenshots, public demo, load and restore drills | §3.2, §12, §13 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
+| 0 | Monorepo scaffold, config, Docker files, health endpoints, `ims` CLI | §2.3, §10 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
+| 1 | Auth (Argon2id, RS256, refresh rotation), RBAC, store scoping, audit log | §8 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
+| 2 | Catalog, append-only stock ledger, levels, adjustments, stocktakes | §5, §6 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
+| 3 | POS sales, returns, voids, tenders, idempotency, below-cost guard | §3.2, §5.3 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
+| 4 | Purchasing, state machine, receiving, cost-basis updates | §3.3 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
+| 5 | Expenses, P&L, dashboard, product performance, ageing, turnover | §3.5, §4.5 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
+| 6 | Forecasting with model selection, reorder suggestions, anomaly screening | §7.1, §7.2 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
+| 7 | Assistant with read-only tool layer, grounding and redaction | §7.3 | ![Partial](https://img.shields.io/badge/status-partial-yellow) — local provider only |
+| 8 | Web UI (dashboard, POS, stock, reorder, P&L, assistant) | §13 | ![Done](https://img.shields.io/badge/status-done-brightgreen) |
+| 9 | Offline POS queue, CSV import/export, shifts, transfers, report exports | §4 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
+| 10 | Playwright e2e, k6 load, enforced coverage gates | §9 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
+| 11 | External LLM adapters, embedding retrieval, SSE streaming | §7.3 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
+| 12 | Automated backups, restore drills, image scanning, deploy pipeline | §8.5, §11 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
+| 13 | Screenshots, hosted demo, screencast | §12, §13 | ![Planned](https://img.shields.io/badge/status-planned-orange) |
 
 ---
 

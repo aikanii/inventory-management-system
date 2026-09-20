@@ -1,0 +1,39 @@
+# Production-shaped stack: PostgreSQL 16 alongside the app.
+# For a single-machine install with no external database, run `node bin/ims.js start`
+# instead — the app then uses its embedded PostgreSQL (PGlite).
+name: ims
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ims}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-ims}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ims} -d ${POSTGRES_DB:-ims}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    # Not published to the host by default; uncomment for local inspection.
+    # ports: ["5432:5432"]
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-ims}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-ims}
+      PORT: "3000"
+      IMS_SEED_ON_BOOT: ${IMS_SEED_ON_BOOT:-false}
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
