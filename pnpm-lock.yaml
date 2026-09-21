@@ -76,6 +76,9 @@ importers:
       vite:
         specifier: ^6.0.7
         version: 6.4.3(@types/node@22.20.4)(tsx@4.23.15)
+      vitest:
+        specifier: ^5.0.1
+        version: 5.0.1(@types/node@22.20.4)(vite@6.4.3(@types/node@22.20.4)(tsx@4.23.15))
 
 packages:
 

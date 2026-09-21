@@ -6,15 +6,18 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import type { Server } from 'node:http';
+import { SignJWT, importPKCS8 } from 'jose';
+import { randomUUID } from 'node:crypto';
 import { openDatabase, type Database } from '../../src/db/database.js';
 import { migrate } from '../../src/db/migrate.js';
-import { ensureJwtKeys } from '../../src/shared/security.js';
+import { ensureJwtKeys, type JwtKeys } from '../../src/shared/security.js';
 import type { AppContext } from '../../src/shared/http.js';
 import { createApp } from '../../src/main.js';
 import { createQueue, buildHandlers, type Queue } from '../../src/worker/index.js';
 import { seed, type SeedResult } from '../../src/seed.js';
 
 let db: Database;
+let keys: JwtKeys;
 let queue: Queue;
 let server: Server;
 let base = '';
@@ -58,6 +61,30 @@ async function call<T = any>(method: string, path: string, body?: unknown, opts:
   return { status: res.status, body: json as T };
 }
 
+/** Send `GET /api/v1/products` with a literal Authorization header (or none). */
+async function callWithAuthorization(authorization: string | null) {
+  const headers: Record<string, string> = { 'content-type': 'application/json' };
+  if (authorization !== null) headers.authorization = authorization;
+  const res = await fetch(`${base}/api/v1/products`, { headers });
+  const text = await res.text();
+  return {
+    status: res.status,
+    body: text ? JSON.parse(text) : null,
+    challenge: res.headers.get('www-authenticate'),
+  };
+}
+
+/** A correctly signed token whose `exp` is in the past: the realistic 15-minute-later case. */
+async function expiredAccessToken(): Promise<string> {
+  const now = Math.floor(Date.now() / 1000);
+  return new SignJWT({ role: 'OWNER', store_id: storeId })
+    .setProtectedHeader({ alg: 'RS256', kid: keys.kid })
+    .setSubject(randomUUID())
+    .setIssuedAt(now - 7200)
+    .setExpirationTime(now - 3600)
+    .sign(await importPKCS8(keys.privateKey, 'RS256'));
+}
+
 async function sql<T = any>(query: string, params: unknown[] = []): Promise<T[]> {
   return (await db.query<T>(query, params)).rows;
 }
@@ -65,7 +92,7 @@ async function sql<T = any>(query: string, params: unknown[] = []): Promise<T[]>
 beforeAll(async () => {
   db = await openDatabase({});           // in-memory PostgreSQL
   await migrate(db);
-  const keys = await ensureJwtKeys(db);
+  keys = await ensureJwtKeys(db);
   queue = createQueue(db, buildHandlers(db));
   const ctx: AppContext = { db, keys, enqueue: (kind, payload) => queue.enqueue(kind, payload) };
   const app = createApp(ctx);
@@ -159,6 +186,48 @@ describe('authentication', () => {
     const replay = await call('POST', '/api/v1/auth/refresh', { refresh_token: oldToken });
     expect(replay.status).toBe(401);
     expect(replay.body.error.code).toBe('REFRESH_TOKEN_REUSED');
+  });
+
+  it('answers 401 TOKEN_INVALID for an expired token, not a 500', async () => {
+    const res = await call('GET', '/api/v1/products', undefined, { token: await expiredAccessToken() });
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('TOKEN_INVALID');
+    expect(res.body.error.message).toMatch(/expired/i);
+  });
+
+  it('answers 401 TOKEN_INVALID for a token it cannot verify, not a 500', async () => {
+    const res = await call('GET', '/api/v1/products', undefined, { token: 'not-a-jwt' });
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('TOKEN_INVALID');
+  });
+
+  it('accepts the bearer scheme in any case, per RFC 7235', async () => {
+    expect((await callWithAuthorization(`bearer ${owner().access}`)).status).toBe(200);
+    expect((await callWithAuthorization(`BEARER ${owner().access}`)).status).toBe(200);
+    expect((await callWithAuthorization(`Bearer  ${owner().access}`)).status).toBe(200);
+  });
+
+  it('reports a missing token only when no Authorization header was sent', async () => {
+    const none = await callWithAuthorization(null);
+    expect(none.status).toBe(401);
+    expect(none.body.error.code).toBe('UNAUTHENTICATED');
+    expect(none.body.error.message).toBe('Missing bearer token.');
+
+    const wrongScheme = await callWithAuthorization('Basic dXNlcjpwYXNz');
+    expect(wrongScheme.status).toBe(401);
+    expect(wrongScheme.body.error.code).toBe('TOKEN_INVALID');
+    expect(wrongScheme.body.error.message).not.toBe('Missing bearer token.');
+
+    const empty = await callWithAuthorization('Bearer ');
+    expect(empty.status).toBe(401);
+    expect(empty.body.error.code).toBe('TOKEN_INVALID');
+  });
+
+  it('challenges with WWW-Authenticate on a 401', async () => {
+    const none = await callWithAuthorization(null);
+    expect(none.challenge).toMatch(/^Bearer realm="ims", error="invalid_request"/);
+    const bad = await callWithAuthorization('Bearer not-a-jwt');
+    expect(bad.challenge).toMatch(/^Bearer realm="ims", error="invalid_token"/);
   });
 
   it('refuses to act on a store the token was not minted for', async () => {
@@ -596,6 +665,24 @@ describe('platform', () => {
     expect(ready.status).toBe(200);
     expect(ready.body.driver).toBe('pglite');
     expect(ready.body.schema_revision).toBe('0001_init');
+  });
+
+  it('authenticates the audit log route itself: owner in, everyone else out', async () => {
+    const asOwner = await call('GET', '/api/v1/audit-logs', undefined, {
+      token: owner().access, store: owner().storeId,
+    });
+    expect(asOwner.status).toBe(200);
+    expect(Array.isArray(asOwner.body.data)).toBe(true);
+
+    const asCashier = await call('GET', '/api/v1/audit-logs', undefined, {
+      token: cashier().access, store: cashier().storeId,
+    });
+    expect(asCashier.status).toBe(403);
+    expect(asCashier.body.error.code).toBe('FORBIDDEN');
+
+    const anonymous = await call('GET', '/api/v1/audit-logs');
+    expect(anonymous.status).toBe(401);
+    expect(anonymous.body.error.message).toBe('Missing bearer token.');
   });
 
   it('records an audit trail of state changes', async () => {

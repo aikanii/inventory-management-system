@@ -7,7 +7,8 @@
  * rotate within a family — replaying a rotated token revokes the whole family.
  */
 import { createHash, generateKeyPairSync, randomUUID } from 'node:crypto';
-import { SignJWT, jwtVerify, importPKCS8, importSPKI } from 'jose';
+import { SignJWT, jwtVerify, importPKCS8, importSPKI, errors as joseErrors } from 'jose';
+import type { JWTPayload } from 'jose';
 import { hash as argon2Hash, verify as argon2Verify } from '@node-rs/argon2';
 import type { Database } from '../db/database.js';
 import { ApiError, forbidden, storeAccessDenied, unauthenticated } from './errors.js';
@@ -116,16 +117,33 @@ export async function signAccessToken(keys: JwtKeys, claims: AccessTokenClaims):
     .sign(await importPKCS8(keys.privateKey, 'RS256'));
 }
 
+/**
+ * Verify an access token. Every failure is a 401 `TOKEN_INVALID`, never a 500:
+ * jose throws its own error classes for an expired or badly signed token, and
+ * letting one escape turns a routine "please sign in again" into an
+ * `INTERNAL_ERROR` — which also stops the client from refreshing, because the
+ * client only retries a 401.
+ */
 export async function verifyAccessToken(
   keys: JwtKeys,
   token: string,
 ): Promise<{ sub: string; role: Role; storeId: string }> {
-  const { payload } = await jwtVerify(token, await importSPKI(keys.publicKey, 'RS256'), {
-    algorithms: ['RS256'],
-  });
+  let payload: JWTPayload;
+  try {
+    ({ payload } = await jwtVerify(token, await importSPKI(keys.publicKey, 'RS256'), {
+      algorithms: ['RS256'],
+    }));
+  } catch (err) {
+    if (err instanceof joseErrors.JWTExpired) {
+      throw unauthenticated('TOKEN_INVALID', 'Access token expired.');
+    }
+    throw unauthenticated('TOKEN_INVALID', 'Access token is invalid.');
+  }
   const role = payload.role as Role | undefined;
   const storeId = payload.store_id as string | undefined;
-  if (!payload.sub || !role || !storeId) throw unauthenticated('TOKEN_INVALID', 'Malformed token.');
+  if (!payload.sub || !role || !storeId) {
+    throw unauthenticated('TOKEN_INVALID', 'Access token is missing its subject, role or store.');
+  }
   return { sub: payload.sub, role, storeId };
 }
 

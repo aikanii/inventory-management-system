@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, currentUser, get, money, pct, post, saveSession, session, storeName } from './api.ts';
+import {
+  api, currentUser, get, money, onSessionExpired, pct, post, saveSession, session, storeName,
+} from './api.ts';
 
 type View = 'dashboard' | 'pos' | 'inventory' | 'reorder' | 'reports' | 'assistant';
 
@@ -23,8 +25,28 @@ interface CartLine {
 export default function App() {
   const [authed, setAuthed] = useState<boolean>(Boolean(session.token));
   const [view, setView] = useState<View>('dashboard');
+  const [notice, setNotice] = useState('');
 
-  if (!authed) return <Login onSuccess={() => setAuthed(true)} />;
+  // The API client drops the tokens when a 401 cannot be refreshed; follow it
+  // back to the login screen and say why, rather than rendering a shell whose
+  // every request is unauthenticated.
+  useEffect(() => onSessionExpired((reason) => {
+    setNotice(reason);
+    setAuthed(false);
+  }), []);
+
+  if (!authed) {
+    return (
+      <Login
+        notice={notice}
+        onSuccess={() => {
+          setNotice('');
+          setView('dashboard');
+          setAuthed(true);
+        }}
+      />
+    );
+  }
 
   return (
     <div className="shell">
@@ -51,7 +73,7 @@ export default function App() {
             <strong>{currentUser()?.full_name ?? 'Signed in'}</strong>
             <small>{session.role}</small>
           </div>
-          <button className="ghost" onClick={() => { session.clear(); setAuthed(false); }}>
+          <button className="ghost" onClick={() => { session.clear(); setNotice(''); setAuthed(false); }}>
             Sign out
           </button>
         </div>
@@ -82,7 +104,7 @@ function NavItem({ id, label, icon, active, onClick, hidden }: {
 
 // ------------------------------------------------------------------ login
 
-function Login({ onSuccess }: { onSuccess: () => void }) {
+function Login({ onSuccess, notice }: { onSuccess: () => void; notice?: string }) {
   const [email, setEmail] = useState('owner@demo.ims');
   const [password, setPassword] = useState('Demo!Owner2026');
   const [error, setError] = useState('');
@@ -124,7 +146,7 @@ function Login({ onSuccess }: { onSuccess: () => void }) {
           <input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
             autoComplete="current-password" />
         </label>
-        {error && <div className="alert error">{error}</div>}
+        {(error || notice) && <div className="alert error">{error || notice}</div>}
         <button type="submit" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
         <div className="demo-accounts">
           <span className="muted">Demo accounts</span>
@@ -278,7 +300,7 @@ function PointOfSale() {
     setBusy(true);
     setMessage(null);
     try {
-      const sale = await post('/api/v1/sales', {
+      const sale = await post<any>('/api/v1/sales', {
         items: cart.map((l) => ({
           product_id: l.product.id,
           quantity: l.quantity,
