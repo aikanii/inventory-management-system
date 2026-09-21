@@ -7,7 +7,7 @@
  */
 import express, { type Express } from 'express';
 import { existsSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openDatabase, type Database } from './db/database.js';
 import { migrate, schemaRevision } from './db/migrate.js';
@@ -114,7 +114,18 @@ export function createApp(ctx: AppContext): Express {
   const webDist = process.env.IMS_WEB_DIST
     ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../web/dist');
   if (existsSync(webDist)) {
-    app.use(express.static(webDist, { index: 'index.html', maxAge: '1h' }));
+    app.use(express.static(webDist, {
+      index: 'index.html',
+      setHeaders(res, filePath) {
+        // Vite hashes asset filenames, so those are immutable. index.html must
+        // never be cached: a browser holding yesterday's copy keeps requesting a
+        // bundle that no longer exists on disk and silently runs stale code.
+        if (filePath.endsWith(`${sep}index.html`)) res.setHeader('Cache-Control', 'no-cache');
+        else if (filePath.includes(`${sep}assets${sep}`)) {
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+        }
+      },
+    }));
     // SPA fallback. Express 5 (path-to-regexp v8) no longer accepts a bare '*',
     // so deep links are served by a guard middleware instead of a wildcard route.
     app.use((req, res, next) => {
@@ -123,6 +134,7 @@ export function createApp(ctx: AppContext): Express {
         next();
         return;
       }
+      res.setHeader('Cache-Control', 'no-cache');
       res.sendFile(resolve(webDist, 'index.html'));
     });
   } else {

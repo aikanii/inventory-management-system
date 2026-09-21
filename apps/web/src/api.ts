@@ -5,6 +5,13 @@ export interface ApiError extends Error {
   details?: unknown;
 }
 
+/**
+ * Bumped every time the session is replaced or dropped. A failure belongs to
+ * the epoch it started in: the last gasp of a dead session must not clear the
+ * credentials the user has just signed in with.
+ */
+let epoch = 0;
+
 let accessToken: string | null = localStorage.getItem('ims.access');
 let refreshToken: string | null = localStorage.getItem('ims.refresh');
 let storeId: string | null = localStorage.getItem('ims.store');
@@ -21,6 +28,7 @@ export const session = {
     return role ?? '';
   },
   clear() {
+    epoch++;
     accessToken = refreshToken = storeId = role = null;
     for (const k of ['ims.access', 'ims.refresh', 'ims.store', 'ims.role', 'ims.user']) {
       localStorage.removeItem(k);
@@ -42,7 +50,10 @@ export function onSessionExpired(handler: ExpiredHandler): () => void {
   };
 }
 
-function expireSession(reason: string): void {
+function expireSession(fromEpoch: number, reason: string): void {
+  // The user signed in again (or out) while this failure was in flight; the
+  // session it complains about is no longer the one on screen.
+  if (epoch !== fromEpoch) return;
   const hadSession = Boolean(accessToken);
   session.clear();
   if (!hadSession) return;
@@ -71,7 +82,7 @@ let rotationFailure = '';
  * case, not an edge case: without the shared promise, opening one view after
  * the 15-minute access token lapses burned the family and signed the user out.
  */
-function rotate(): Promise<Rotation> {
+function rotate(fromEpoch: number): Promise<Rotation> {
   rotation ??= (async () => {
     const token = refreshToken;
     if (!token) return { ok: false };
@@ -86,6 +97,9 @@ function rotate(): Promise<Rotation> {
       return { ok: false };
     }
     const body = await res.json();
+    // A sign-in landed while this rotation was in flight: its tokens are newer
+    // than anything this rotation can produce, so leave them alone.
+    if (epoch !== fromEpoch) return { ok: false };
     accessToken = body.data.access_token;
     refreshToken = body.data.refresh_token;
     localStorage.setItem('ims.access', body.data.access_token);
@@ -99,6 +113,7 @@ function rotate(): Promise<Rotation> {
 }
 
 export function saveSession(data: any): void {
+  epoch++;
   accessToken = data.access_token;
   refreshToken = data.refresh_token;
   storeId = data.store.id;
@@ -129,6 +144,7 @@ export function currency(): string {
 }
 
 async function raw(path: string, init: RequestInit = {}, retry = true): Promise<Response> {
+  const startedAt = epoch;
   const sentWith = accessToken;
   const headers = new Headers(init.headers);
   headers.set('content-type', 'application/json');
@@ -140,16 +156,17 @@ async function raw(path: string, init: RequestInit = {}, retry = true): Promise<
 
   if (!retry) {
     // Rotated once already and still rejected: this session is unusable.
-    expireSession(rotationFailure || 'Your session has expired. Please sign in again.');
+    expireSession(startedAt, rotationFailure || 'Your session has expired. Please sign in again.');
     return res;
   }
 
   // If a sibling request already rotated while this one was in flight, replay
   // with the new token instead of rotating a second time.
-  const rotated = accessToken !== sentWith ? { ok: true } : await rotate();
-  if (rotated.ok) return raw(path, init, false);
+  const rotated = accessToken !== sentWith ? { ok: true } : await rotate(startedAt);
+  // A sibling rotation — or a fresh sign-in — replaced the token meanwhile.
+  if (rotated.ok || accessToken !== sentWith) return raw(path, init, false);
 
-  expireSession(rotationFailure || 'Your session has expired. Please sign in again.');
+  expireSession(startedAt, rotationFailure || 'Your session has expired. Please sign in again.');
   return res;
 }
 
